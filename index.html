@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Тропа">
+<title>Тропа — поездка под бюджет</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Тропа <span id="cityTag" class="city-tag"></span></div>
+  <button id="resetBtn" class="ghost" title="Новая поездка">Новая</button>
+</header>
+
+<main>
+  <!-- ЧАТ -->
+  <section id="tab-chat" class="tab active">
+    <div id="messages" class="messages"></div>
+    <div id="chips" class="chips"></div>
+    <form id="composer" class="composer">
+      <textarea id="input" rows="1" placeholder="Напиши, где ты и что хочешь…"></textarea>
+      <button id="micBtn" type="button" class="icon" title="Голосом" aria-label="Голосом">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
+      </button>
+      <button type="submit" class="icon send" aria-label="Отправить">
+        <svg viewBox="0 0 24 24"><path d="M3 20.5 21 12 3 3.5 3 10l12 2-12 2z"/></svg>
+      </button>
+    </form>
+  </section>
+
+  <!-- ПЛАН -->
+  <section id="tab-plan" class="tab">
+    <div id="plan" class="plan"><div class="empty">Плана пока нет. Расскажи в чате, куда едешь и сколько готов тратить.</div></div>
+  </section>
+
+  <!-- РЯДОМ -->
+  <section id="tab-near" class="tab">
+    <div class="near-head">
+      <div id="nearStatus" class="muted">Ищу, где ты…</div>
+      <div id="nearFilters" class="chips static"></div>
+    </div>
+    <div id="nearMap" class="map"></div>
+    <div id="nearList" class="list"></div>
+  </section>
+</main>
+
+<nav class="tabs">
+  <button data-tab="chat" class="active"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H7l-3 3z"/></svg>Чат</button>
+  <button data-tab="plan"><svg viewBox="0 0 24 24"><path d="M5 3h14v18l-7-4-7 4z"/></svg>План</button>
+  <button data-tab="near"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>Рядом</button>
+</nav>
+
+<script src="vendor/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
