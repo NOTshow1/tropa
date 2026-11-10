@@ -226,3 +226,37 @@ body.sheet-open .tabbar, body.panel-open .tabbar { opacity: 0; pointer-events: n
 
 /* тёмная карта из обычных OSM-тайлов */
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.6); }
+
+/* ---------- Мишлен ---------- */
+.mstar { position: relative; display: inline-block; width: 30px; height: 30px; animation: glow 2.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 5px rgba(255,205,70,.95)) drop-shadow(0 0 12px rgba(255,170,0,.55)); }
+.mstar.s2 { width: 35px; height: 35px; }
+.mstar.s3 { width: 40px; height: 40px; }
+.mstar.big { width: 64px; height: 64px; }
+.mstar i { position: absolute; inset: 0; background: linear-gradient(140deg, #fff8d0 0%, #ffd84a 35%, #f0a800 75%, #c98600 100%);
+  clip-path: polygon(50% 2%, 62% 36%, 98% 37%, 69% 58%, 80% 94%, 50% 72%, 20% 94%, 31% 58%, 2% 37%, 38% 36%); }
+.mstar b { position: absolute; inset: 0; display: grid; place-items: center; padding-top: 12%; font: 800 11px var(--round); color: #6b3f00; }
+.mstar.big b { font-size: 20px; }
+@keyframes glow { 50% { filter: drop-shadow(0 0 9px rgba(255,220,90,1)) drop-shadow(0 0 22px rgba(255,170,0,.85)); } }
+.bibface { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff6b6b, #c8102e);
+  color: #fff; font: 800 9px var(--round); border: 1.5px solid #ffd84a; box-shadow: 0 0 8px rgba(255,80,80,.6); }
+.bibface.big { width: 60px; height: 60px; font-size: 18px; border-width: 3px; }
+.tile .mstar { width: 30px; height: 30px; } .tile .bibface { width: 30px; height: 30px; }
+.badge.gold { background: linear-gradient(90deg, rgba(255,216,74,.22), rgba(240,168,0,.22)); color: #ffd84a; }
+
+/* ---------- фото в карточке ---------- */
+.photos { margin: 6px -18px 0; }
+.gallery { display: flex; gap: 8px; overflow-x: auto; padding: 4px 18px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.gallery::-webkit-scrollbar { display: none; }
+.ph { flex: none; width: 78%; height: 190px; border-radius: 20px; overflow: hidden; background: var(--s2); scroll-snap-align: center; }
+.ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph.skel { background: linear-gradient(90deg, var(--s2), var(--s3), var(--s2)); background-size: 200% 100%; animation: sk 1.2s infinite linear; }
+@keyframes sk { to { background-position: -200% 0; } }
+.ph-credit { font-size: 11.5px; color: var(--dim); padding: 6px 20px 0; }
+.ph-credit a { color: var(--muted); }
+.cover { margin: 4px 18px 0; height: 150px; border-radius: 22px; position: relative; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--line); }
+.cover-e { font-size: 58px; margin-top: -22px; }
+.cover-btn { position: absolute; left: 12px; right: 12px; bottom: 12px; text-align: center; padding: 10px; border-radius: 14px; font-size: 14px; font-weight: 600;
+  background: rgba(10,11,15,.6); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border: 1px solid var(--line2); }
+.tile.has-img { background-size: cover !important; background-position: center !important; font-size: 0; }
+.tile.has-img .n { font-size: 11px; }

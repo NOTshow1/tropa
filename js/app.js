@@ -63,28 +63,82 @@ $('#sheetBack').onclick = closeSheet;
 const appleMaps = p => `https://maps.apple.com/?q=${encodeURIComponent(p.o || p.n)}&ll=${p.la},${p.lo}`;
 const gMaps = p => `https://www.google.com/maps/search/?api=1&query=${p.la},${p.lo}`;
 
+// ---------- фото ----------
+// Бесплатно и легально: фото из статьи Википедии (если у места в OSM есть статья). Для остальных — обложка + кнопка в Google Maps.
+const photoCache = {};
+async function wikiPhotos(wp) {
+  if (photoCache[wp]) return photoCache[wp];
+  const i = wp.indexOf(':'); const lang = wp.slice(0, i), title = wp.slice(i + 1);
+  const out = [];
+  try {
+    const sum = await (await fetch(`https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`)).json().catch(() => ({}));
+    const lead = decodeURIComponent((sum.originalimage?.source || '').split('/').pop() || '').replace(/_/g, ' ');
+    const api = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&origin=*&titles=${encodeURIComponent(title)}&generator=images&gimlimit=30&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=640`;
+    const j = await (await fetch(api)).json();
+    for (const pg of Object.values(j.query?.pages || {})) {
+      const ii = pg.imageinfo?.[0];
+      if (!ii || ii.mime !== 'image/jpeg' || ii.width < 400 || /logo|map|plan|icon|flag|location|locator/i.test(pg.title)) continue;
+      const item = { src: ii.thumburl, page: ii.descriptionurl };
+      if (lead && pg.title.replace(/^[^:]+:/, '') === lead) out.unshift(item); else out.push(item);
+    }
+    out.splice(8);
+  } catch { /* офлайн */ }
+  return (photoCache[wp] = out);
+}
+const gPhotos = p => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((p.o || p.n) + ' ' + (p.ad || '東京'))}`;
+function coverHtml(p) {
+  const c = p.mi ? '#e0a400' : color(p);
+  return `<div class="cover" style="background:radial-gradient(120% 120% at 15% 0%,${c}66,transparent 60%),radial-gradient(100% 100% at 100% 100%,${c}33,transparent 60%),var(--s2)">
+    <span class="cover-e">${p.mi ? starIcon(p.mi, true) : emo(p)}</span>
+    <a class="cover-btn" href="${gPhotos(p)}" target="_blank">📷 Фото посетителей в Google Maps</a></div>`;
+}
+async function fillPhotos(p, el) {
+  const box = el.querySelector('.photos'); if (!box) return;
+  if (!p.wp) { box.innerHTML = coverHtml(p); return; }
+  box.innerHTML = '<div class="gallery"><div class="ph skel"></div><div class="ph skel"></div></div>';
+  const list = await wikiPhotos(p.wp);
+  if (!el.isConnected || el.querySelector('.photos') !== box) return;
+  if (!list.length) { box.innerHTML = coverHtml(p); return; }
+  box.innerHTML = `<div class="gallery">${list.map(x => `<a class="ph" href="${esc(x.page || '#')}" target="_blank"><img src="${esc(x.src)}" loading="lazy" alt="" onerror="this.parentNode.remove()"></a>`).join('')}</div>
+    <div class="ph-credit">Фото: Wikipedia / Wikimedia Commons · <a href="${gPhotos(p)}" target="_blank">ещё в Google Maps ↗</a></div>`;
+}
+
+function starIcon(mi, big) {
+  if (mi === 'bib') return `<span class="bibface${big ? ' big' : ''}">Bib</span>`;
+  return `<span class="mstar s${mi}${big ? ' big' : ''}"><i></i><b>${mi}</b></span>`;
+}
+const MI_TXT = { 3: 'Три звезды Michelin — стоит отдельной поездки', 2: 'Две звезды Michelin — стоит крюка', 1: 'Одна звезда Michelin — высокая кухня', bib: 'Bib Gourmand — по версии Мишлен: отлично и недорого' };
+
 function placeSheet(p, { cost, cur = 'JPY', onSwap, distance } = {}) {
   const uc = S.plan?.userCur || S.trip.budget?.currency;
   const price = cost ?? p.p;
-  const priceTxt = price ? `≈ ${fmt(price, cur)}${uc && uc !== cur ? ' · ' + fmt(convert(price, cur, uc), uc) : ''}` : (p.g === 'sight' || p.g === 'shop' || p.g === 'culture' ? 'бесплатно' : null);
-  const why = p.f ? 'Известное место — классика района' : p.s >= 1.5 ? 'Нишевое: не сеть, хорошо описано в OSM, местный вайб' : null;
+  const priceTxt = price ? `≈ ${fmt(price, cur)}${p.mi ? ' на человека' : ''}${uc && uc !== cur ? ' · ' + fmt(convert(price, cur, uc), uc) : ''}${p.pl ? ` <span class="muted">(${'¥'.repeat(p.pl)})</span>` : ''}`
+    : (p.g === 'sight' || p.g === 'shop' || p.g === 'culture' ? 'бесплатно' : null);
+  const why = p.mi ? null : p.f ? 'Известное место — классика района' : p.s >= 1.5 ? 'Нишевое: не сеть, местный вайб' : null;
+  const badge = p.mi ? `<span class="badge gold">${p.mi === 'bib' ? 'Bib Gourmand' : '★'.repeat(p.mi) + ' Michelin'}</span>`
+    : p.f ? '<span class="badge famous">классика</span>' : p.s >= 1.5 ? '<span class="badge niche">нишевое</span>' : '';
   const html = `
-    <div class="sh-head"><div class="tile" style="${tileBg(p)}">${emo(p)}</div>
-      <div><h3>${esc(p.n)}${p.f ? '<span class="badge famous">классика</span>' : p.s >= 1.5 ? '<span class="badge niche">нишевое</span>' : ''}</h3>${p.o ? `<div class="orig">${esc(p.o)}</div>` : ''}</div></div>
+    <div class="photos"></div>
+    <div class="sh-head"><div class="tile" style="${p.mi ? 'background:#e0a40026' : tileBg(p)}">${p.mi ? starIcon(p.mi) : emo(p)}</div>
+      <div><h3>${esc(p.n)}${badge}</h3>${p.o ? `<div class="orig">${esc(p.o)}</div>` : ''}</div></div>
     <div class="facts">
-      <div><span>🏷️</span><span>${esc(KIND_RU[p.k] || p.k)}${p.cu ? ' · ' + esc(p.cu) : ''}</span></div>
+      ${p.mi ? `<div><span>⭐</span><span>${MI_TXT[p.mi]}</span></div>` : ''}
+      <div><span>🏷️</span><span>${esc(p.mi ? 'ресторан' : (KIND_RU[p.k] || p.k))}${p.cu ? ' · ' + esc(p.cu) : ''}</span></div>
       ${priceTxt ? `<div><span>💴</span><span>${priceTxt}</span></div>` : ''}
       ${p.h ? `<div><span>🕒</span><span>${esc(p.h)}</span></div>` : ''}
+      ${p.ad ? `<div><span>📍</span><span>${esc(p.ad)}</span></div>` : ''}
       ${distance != null ? `<div><span>🚶</span><span>${Math.max(1, Math.round(distance / 80))} мин пешком · ${distance < 1000 ? Math.round(distance) + ' м' : (distance / 1000).toFixed(1) + ' км'}</span></div>` : ''}
+      ${p.mi && p.mi !== 'bib' ? '<div><span>📞</span><span class="muted">В звёздные рестораны почти всегда нужна бронь заранее</span></div>' : ''}
       ${why ? `<div><span>✨</span><span class="muted">${why}</span></div>` : ''}
     </div>
     <div class="actions">
       <a class="act primary" href="${appleMaps(p)}" target="_blank"><span class="ic">🧭</span>Маршрут</a>
-      <a class="act" href="${gMaps(p)}" target="_blank"><span class="ic">🗺️</span>Google</a>
-      <a class="act ${p.w ? '' : 'off'}" href="${esc(p.w || '#')}" target="_blank"><span class="ic">🌐</span>Сайт</a>
+      <a class="act" href="${gPhotos(p)}" target="_blank"><span class="ic">🗺️</span>Google</a>
+      ${p.mu ? `<a class="act" href="${esc(p.mu)}" target="_blank"><span class="ic">⭐</span>Гид Michelin</a>`
+             : `<a class="act ${p.w ? '' : 'off'}" href="${esc(p.w || '#')}" target="_blank"><span class="ic">🌐</span>Сайт</a>`}
     </div>
     ${onSwap ? `<div class="swap-h">Заменить в плане</div><div class="seg"><button data-m="other">↻ Другое</button><button data-m="cheaper">↓ Дешевле</button><button data-m="pricier">↑ Дороже</button></div>` : ''}`;
-  openSheet(html, el => el.querySelectorAll('[data-m]').forEach(b => b.onclick = () => onSwap(b.dataset.m, b)));
+  openSheet(html, el => { el.querySelectorAll('[data-m]').forEach(b => b.onclick = () => onSwap(b.dataset.m, b)); fillPhotos(p, el); });
 }
 
 // ---------------- кольцо ----------------
@@ -321,6 +375,14 @@ function renderPlan() {
     placeSheet(it.p, { cost: it.cost, cur, onSwap });
   });
   drawDayMap(d);
+  // миниатюры: у мест со статьёй в Википедии вместо эмодзи — настоящее фото
+  box.querySelectorAll('[data-item]').forEach(async b => {
+    const p = d.items[+b.dataset.item].p;
+    if (!p?.wp) return;
+    const ph = await wikiPhotos(p.wp);
+    const tile = b.querySelector('.tile');
+    if (ph[0] && tile && b.isConnected) { tile.classList.add('has-img'); tile.style.backgroundImage = `url("${ph[0].src}")`; }
+  });
 }
 function cityDistrictName(p) { return cityCache[S.plan.city]?.districts[p.d]?.name || ''; }
 
@@ -349,6 +411,7 @@ function drawDayMap(d) {
 // ---------------- карта ----------------
 const MAP_FILTERS = [
   { id: 'all', label: 'Всё' },
+  { id: 'michelin', label: '⭐ Мишлен', test: () => false },
   { id: 'food', label: '🍜 Еда', test: p => p.g === 'food' || p.k === 'izakaya' },
   { id: 'cafe', label: '☕ Кофе', test: p => p.g === 'cafe' },
   { id: 'bar', label: '🍸 Бары', test: p => p.g === 'bar' || p.g === 'night' },
@@ -365,8 +428,11 @@ const MAP_FILTERS = [
 const MF = { cat: 'all', niche: false, free: false, q: '' };
 let bigMap = null, mapLayer = null, meMarker = null, myPos = null, mapPlaces = [];
 
+let michelin = null;
+async function loadMichelin(id) { if (!michelin) michelin = await fetch('data/' + id + '_michelin.json').then(r => r.json()).catch(() => ({ places: [] })); return michelin; }
 async function openMap() {
   const city = await loadCity(S.trip.city || 'tokyo');
+  await loadMichelin(city.id);
   renderMapFilters();
   if (!bigMap) {
     bigMap = L.map('bigMap', { zoomControl: false, attributionControl: true }).setView([35.6938, 139.7034], 15);
@@ -422,11 +488,27 @@ function refreshMap(city, fitToResults = false) {
     L.marker([p.la, p.lo], { icon: pin(p, emo(p), top ? (p.s >= 1.5 ? 'hot' : '') : 'sm'), zIndexOffset: top ? 1000 : 0 })
       .addTo(mapLayer).on('click', () => placeSheet(p, { cur: CITY_PRICES[city.id].currency, distance: myPos ? distM(myPos[0], myPos[1], p.la, p.lo) : null }));
   });
+  // ⭐ Мишлен: звёзды видны всегда на «Всё/Еда/Бары/Мишлен», Bib Gourmand — на «Мишлен/Еда»
+  let mlist = [];
+  if (michelin && ['all', 'food', 'bar', 'michelin'].includes(MF.cat) && !MF.free) {
+    const showBib = MF.cat === 'michelin' || MF.cat === 'food';
+    mlist = michelin.places.filter(m => b.contains([m.la, m.lo]) && (m.mi !== 'bib' || showBib) &&
+      (!MF.q || (m.n + ' ' + m.cu + ' мишлен michelin').toLowerCase().includes(MF.q)));
+    for (const m of mlist) {
+      L.marker([m.la, m.lo], { icon: L.divIcon({ className: '', iconSize: [40, 40], iconAnchor: [20, 20], html: starIcon(m.mi) }), zIndexOffset: 3000 + (m.mi === 'bib' ? 0 : m.mi * 10) })
+        .addTo(mapLayer).on('click', () => placeSheet(m, { cur: CITY_PRICES[city.id].currency, distance: myPos ? distM(myPos[0], myPos[1], m.la, m.lo) : null }));
+    }
+  }
+  if (MF.cat === 'michelin') {
+    const rank = x => x.mi === 'bib' ? 0 : x.mi;
+    list = mlist.map(p => ({ p, m: distM(ref[0], ref[1], p.la, p.lo) })).sort((x, y) => rank(y.p) - rank(x.p) || x.m - y.m);
+    mapPlaces = list;
+  }
   $('#mapCount').innerHTML = `${list.length ? list.length + ' ' + plural(list.length, 'место', 'места', 'мест') : 'Ничего не нашлось'} <small>${list.length ? (myPos && b.contains(myPos) ? '· ближе к тебе и нишевее — выше' : '· в этой области') : '· попробуй сдвинуть карту или снять фильтры'}</small>`;
   const cur = CITY_PRICES[city.id].currency;
-  $('#mapList').innerHTML = list.slice(0, 80).map(({ p, m }, i) => `<button class="row-item" data-i="${i}"><div class="tile" style="${tileBg(p)}">${emo(p)}</div>
-    <div class="tl-main"><div class="tl-name">${esc(p.n)}${p.f ? '<span class="badge famous">классика</span>' : p.s >= 1.5 ? '<span class="badge niche">нишевое</span>' : ''}</div>
-    <div class="tl-sub">${esc(KIND_RU[p.k] || p.k)}${p.cu ? ' · ' + esc(p.cu) : ''}</div></div>
+  $('#mapList').innerHTML = list.slice(0, 80).map(({ p, m }, i) => `<button class="row-item" data-i="${i}"><div class="tile" style="${p.mi ? 'background:#e0a40026' : tileBg(p)}">${p.mi ? starIcon(p.mi) : emo(p)}</div>
+    <div class="tl-main"><div class="tl-name">${esc(p.n)}${p.mi ? '<span class="badge gold">' + (p.mi === 'bib' ? 'Bib' : '★'.repeat(p.mi)) + '</span>' : p.f ? '<span class="badge famous">классика</span>' : p.s >= 1.5 ? '<span class="badge niche">нишевое</span>' : ''}</div>
+    <div class="tl-sub">${esc(p.mi ? 'ресторан' : (KIND_RU[p.k] || p.k))}${p.cu ? ' · ' + esc(p.cu) : ''}</div></div>
     <div class="price">${myPos && b.contains(myPos) ? Math.max(1, Math.round(m / 80)) + ' мин' : (p.p ? '≈ ' + fmt(p.p, cur) : '')}</div></button>`).join('');
   $('#mapList').querySelectorAll('[data-i]').forEach(el => el.onclick = () => {
     const { p, m } = list[+el.dataset.i];
