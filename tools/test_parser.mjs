@@ -11,3 +11,5 @@ const cases = [
 for (const c of cases) console.log(c, '\n   ->', JSON.stringify(parseMessage(c)));
 for (const c of ['без алкоголя', 'Жилья нет — подбери', 'Жильё уже есть', 'хочу виды на город', 'Неделя', '$100 в день', 'Добавь бары', 'нужно жильё'])
   console.log(c, '->', JSON.stringify(parseMessage(c)));
+for (const c of ['Токио, 1370$ на неделю, жилья нет', 'в Токио 7 дней, есть 1370 долларов на 7 дней', 'Аниме, красивые места для съемок, и прогулки всю ночь', '200 тыс рублей за всю поездку, 5 дней'])
+  console.log(c, '->', JSON.stringify(parseMessage(c)));

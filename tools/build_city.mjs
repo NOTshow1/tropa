@@ -169,6 +169,19 @@ for (const { e, lat, lon, d } of byId.values()) {
   stats[g + '/' + k] = (stats[g + '/' + k] || 0) + 1;
 }
 
+// дубликаты: одно имя в одной группе ближе 250 м — оставляем лучшее
+{
+  const best = new Map();
+  for (const p of out) {
+    const key = p.g + '|' + p.n.toLowerCase().replace(/s+/g, ' ').trim();
+    const arr = best.get(key) || []; let dup = false;
+    for (let i = 0; i < arr.length; i++) if (dist(arr[i].la, arr[i].lo, p.la, p.lo) < 250) { dup = true; if (p.s > arr[i].s) arr[i] = p; }
+    if (!dup) arr.push(p);
+    best.set(key, arr);
+  }
+  const before = out.length; out.length = 0; for (const arr of best.values()) out.push(...arr);
+  console.log('dedupe', before, '->', out.length);
+}
 const data = {
   id: cityId, name: city.name, country: city.country, currency: city.currency, center: city.center,
   districts: city.districts.map(d => ({ id: d.id, name: d.name, c: d.c, r: d.r })),

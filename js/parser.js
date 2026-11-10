@@ -28,7 +28,8 @@ export const INTERESTS = {
   food:     { label: 'еда', words: ['еда', 'еду', 'поесть', 'пожрать', 'вкусн', 'рамен', 'суши', 'гастро', 'стритфуд', 'уличн', 'кухн', 'food', 'eat'] },
   coffee:   { label: 'кофейни', words: ['кофе', 'кофейн', 'coffee', 'кафе', 'завтрак'] },
   bars:     { label: 'бары', words: ['бар', 'пив', 'выпить', 'крафт', 'идзакая', 'изакая', 'алко', 'сакэ', 'саке', 'коктейл', 'bar', 'beer', 'drink'] },
-  night:    { label: 'ночная жизнь', words: ['клуб', 'ночн', 'тусов', 'вечеринк', 'party', 'club', 'nightlife'] },
+  night:    { label: 'ночная жизнь', words: ['клуб', 'ночн', 'ночь', 'ночью', 'тусов', 'вечеринк', 'party', 'club', 'nightlife', 'до утра'] },
+  photo:    { label: 'фото-места', words: ['съемк', 'снимат', 'сниму', 'фото', 'фотк', 'красив', 'инстаграм', 'insta', 'кадр', 'photo', 'эстетичн', 'вайб'] },
   art:      { label: 'искусство', words: ['искусств', 'галере', 'арт', 'выставк', 'art', 'gallery', 'дизайн'] },
   museums:  { label: 'музеи', words: ['музе', 'museum', 'истори', 'history'] },
   anime:    { label: 'аниме и игры', words: ['аниме', 'манга', 'гик', 'отаку', 'игр', 'anime', 'manga', 'game', 'косплей'] },
@@ -86,10 +87,10 @@ function findBudget(t) {
   let code = null;
   if (currency) for (const [c, r] of CURRENCIES) if (r.test(currency.trim())) { code = c; break; }
   const i = t.indexOf(m[0]);
-  const around = t.slice(Math.max(0, i - 25), i) + ' ' + t.slice(i + m[0].length, i + m[0].length + 25);
+  const around = t.slice(Math.max(0, i - 25), i) + ' ' + t.slice(i + m[0].length, i + m[0].length + 30);
   let per = null;
   if (/(в|на|\/)\s*(день|сутки)|per day|a day|\/day|ежеднев/.test(around)) per = 'day';
-  else if (/всего|на вс[юеё]|на поездку|total|в сумме|общий|итого/.test(around)) per = 'total';
+  else if (/всего|на вс[юеё]|на поездку|за поездку|за вс[юе]|total|в сумме|общий|итого|(на|за) недел|(на|за) \d+\s*(дн|день|дня|дней|сут|ноч)|(на|за) (два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|пару) (дн|дня|дней|ноч)|на (весь|все) (отпуск|поездк|путешеств|дни)|for (the )?(trip|week)/.test(around)) per = 'total';
   return { amount, currency: code, per };
 }
 

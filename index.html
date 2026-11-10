@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#0f1115">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0a0b0f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,48 +16,61 @@
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">Тропа <span id="cityTag" class="city-tag"></span></div>
-  <button id="resetBtn" class="ghost" title="Новая поездка">Новая</button>
-</header>
-
 <main>
   <!-- ЧАТ -->
   <section id="tab-chat" class="tab active">
+    <header class="top">
+      <div class="brand"><span class="logo"></span>Тропа</div>
+      <button id="resetBtn" class="pill-btn">＋ Новая поездка</button>
+    </header>
     <div id="messages" class="messages"></div>
-    <div id="chips" class="chips"></div>
-    <form id="composer" class="composer">
-      <textarea id="input" rows="1" placeholder="Напиши, где ты и что хочешь…"></textarea>
-      <button id="micBtn" type="button" class="icon" title="Голосом" aria-label="Голосом">
-        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
-      </button>
-      <button type="submit" class="icon send" aria-label="Отправить">
-        <svg viewBox="0 0 24 24"><path d="M3 20.5 21 12 3 3.5 3 10l12 2-12 2z"/></svg>
-      </button>
-    </form>
+    <div class="composer-wrap">
+      <div id="chips" class="chips"></div>
+      <form id="composer" class="composer">
+        <textarea id="input" rows="1" placeholder="Где ты, сколько дней, какой бюджет…"></textarea>
+        <button id="micBtn" type="button" class="icon" aria-label="Голосом">
+          <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
+        </button>
+        <button type="submit" class="icon send" aria-label="Отправить">
+          <svg viewBox="0 0 24 24"><path d="M12 4l7 7-1.4 1.4L13 7.8V20h-2V7.8l-4.6 4.6L5 11z"/></svg>
+        </button>
+      </form>
+    </div>
   </section>
 
   <!-- ПЛАН -->
   <section id="tab-plan" class="tab">
-    <div id="plan" class="plan"><div class="empty">Плана пока нет. Расскажи в чате, куда едешь и сколько готов тратить.</div></div>
+    <div id="plan" class="scroll"></div>
   </section>
 
-  <!-- РЯДОМ -->
-  <section id="tab-near" class="tab">
-    <div class="near-head">
-      <div id="nearStatus" class="muted">Ищу, где ты…</div>
-      <div id="nearFilters" class="chips static"></div>
+  <!-- КАРТА -->
+  <section id="tab-map" class="tab">
+    <div id="bigMap" class="bigmap"></div>
+    <div class="map-top">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><path d="M10 4a6 6 0 1 0 3.6 10.8l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></svg>
+        <input id="mapSearch" type="search" placeholder="Поиск: рамен, джаз, храм…" autocomplete="off">
+      </label>
+      <div id="mapFilters" class="chips"></div>
     </div>
-    <div id="nearMap" class="map"></div>
-    <div id="nearList" class="list"></div>
+    <button id="locateBtn" class="fab" aria-label="Где я">
+      <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 3h-2.07A7 7 0 0 0 13 5.07V3h-2v2.07A7 7 0 0 0 5.07 11H3v2h2.07A7 7 0 0 0 11 18.93V21h2v-2.07A7 7 0 0 0 18.93 13H21v-2Zm-9 6a5 5 0 1 1 0-10 5 5 0 0 1 0 10Z"/></svg>
+    </button>
+    <div id="mapPanel" class="map-panel">
+      <button id="mapPanelHead" class="panel-head"><i class="grab"></i><span id="mapCount">…</span></button>
+      <div id="mapList" class="map-list"></div>
+    </div>
   </section>
 </main>
 
-<nav class="tabs">
-  <button data-tab="chat" class="active"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H7l-3 3z"/></svg>Чат</button>
-  <button data-tab="plan"><svg viewBox="0 0 24 24"><path d="M5 3h14v18l-7-4-7 4z"/></svg>План</button>
-  <button data-tab="near"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>Рядом</button>
+<nav class="tabbar">
+  <button data-tab="chat" class="active"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 4z"/></svg><span>Чат</span></button>
+  <button data-tab="plan"><svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h1.5A2.5 2.5 0 0 1 21 6.5v12a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5v-12A2.5 2.5 0 0 1 5.5 4H7zm-2 8v8.5c0 .3.2.5.5.5h13c.3 0 .5-.2.5-.5V10z"/></svg><span>План</span></button>
+  <button data-tab="map"><svg viewBox="0 0 24 24"><path d="M15 4.5 9 2 3 4.5v17L9 19l6 2.5 6-2.5v-17zM10 4.6l4 1.7v13.1l-4-1.7z"/></svg><span>Карта</span></button>
 </nav>
+
+<div id="sheetBack" class="sheet-back"></div>
+<div id="sheet" class="sheet"><i class="grab"></i><div id="sheetBody"></div></div>
 
 <script src="vendor/leaflet.js"></script>
 <script type="module" src="js/app.js"></script>
