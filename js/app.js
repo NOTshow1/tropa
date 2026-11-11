@@ -22,10 +22,14 @@ const color = p => GROUP_COLOR[p.g] || '#888';
 const tileBg = p => `background:${color(p)}26;color:${color(p)}`;
 
 // ---------------- состояние ----------------
-const blank = () => ({ trip: {}, expecting: null, plan: null, msgs: [], seed: 1, day: 0 });
+// S.plans — по плану на каждого участника (если «каждый своё»), иначе один общий; S.plan — тот, что сейчас открыт
+const blank = () => ({ trip: {}, expecting: null, plan: null, plans: [], who: 0, msgs: [], seed: 1, day: 0 });
 let S = JSON.parse(localStorage.getItem('state') || 'null') || blank();
 S.day ||= 0;
-const save = () => localStorage.setItem('state', JSON.stringify(S));
+if (!S.plans) S.plans = S.plan ? [S.plan] : [];
+S.who = Math.min(S.who || 0, Math.max(0, S.plans.length - 1));
+S.plan = S.plans[S.who] || null;
+const save = () => localStorage.setItem('state', JSON.stringify({ ...S, plan: undefined }));
 const cityCache = {};
 async function loadCity(id) {
   if (!cityCache[id]) cityCache[id] = await (await fetch(`data/${id}.json`)).json();
@@ -33,6 +37,24 @@ async function loadCity(id) {
 }
 const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 10 || h >= 20) ? b : c; };
 const daysTxt = n => `${n} ${plural(n, 'день', 'дня', 'дней')}`;
+const pplTxt = n => `${n} ${plural(n, 'человек', 'человека', 'человек')}`;
+
+// ---------------- группа ----------------
+const BMODE_RU = { each: 'у каждого свой бюджет', mine: 'считаю только мой', shared: 'общий бюджет на всех' };
+function groupOf(tr) {
+  const N = tr.people || 1;
+  tr.members ||= [];
+  while (tr.members.length < N) tr.members.push({ name: tr.members.length ? `Друг ${tr.members.length}` : 'Я', budget: null, interests: null });
+  tr.members.length = N;
+  return { N, mode: N > 1 ? (tr.budgetMode || 'each') : 'mine', separate: N > 1 && tr.placesMode === 'separate' };
+}
+const otherIds = () => S.plans.filter(p => p !== S.plan).flatMap(p => p.days.flatMap(d => d.items.map(x => x.p?.i))).filter(Boolean);
+const stayLine = (st, cur, N = 1) => {
+  const pp = st.pp ?? st.price;
+  if (N <= 1) return `${esc(st.label)} · ≈ ${fmt(pp, cur)}/ночь`;
+  const unit = st.cap > 1 ? `${st.units} ${st.kind === 'apartment' ? plural(st.units, 'квартира', 'квартиры', 'квартир') : plural(st.units, 'номер', 'номера', 'номеров')} до ${st.cap} чел.` : `${N} ${plural(N, 'кровать', 'кровати', 'кроватей')}`;
+  return `${esc(st.label)} · ${unit} · ≈ ${fmt(pp, cur)}/ночь с человека`;
+};
 
 // ---------------- вкладки ----------------
 let currentTab = 'chat';
@@ -154,9 +176,9 @@ function ring(frac, size, label, sub) {
 
 // ---------------- чат ----------------
 const SUGG = [
-  ['🗼', 'Я в Токио на 4 дня, 150$ в день, жилья нет. Люблю рамен, странные бары и винтаж', 'классическая поездка'],
-  ['🎮', 'Токио, 3 дня, 10 000 ¥ в день, жильё есть. Аниме, ретро-игры и бани', 'бюджетно и по-гиковски'],
-  ['📸', 'Токио на неделю, 1500$ на всю поездку, нужно жильё. Красивые места для съёмок и ночные прогулки', 'для фото и ночи'],
+  ['🗼', 'Я один в Токио на 4 дня, 150$ в день, жилья нет. Люблю рамен, странные бары и винтаж', 'классическая поездка'],
+  ['🎮', 'Едем в Токио вчетвером на 3 дня, у каждого 10 000 ¥ в день, жилья нет, все вместе. Аниме, ретро-игры и бани', 'компания друзей'],
+  ['👥', 'Группа 12 человек, Токио на неделю, общий бюджет 15 000$, нужно жильё. Каждый ходит куда хочет', 'большая группа, разные маршруты'],
 ];
 function drawWelcome() {
   const box = $('#messages');
@@ -176,14 +198,15 @@ function drawMsg(m) {
   el.className = m.card ? 'plan-card' : 'msg ' + m.who;
   el.innerHTML = m.html;
   el.querySelector('.cta')?.addEventListener('click', () => showTab('plan'));
+  el.querySelector('.grp-cta')?.addEventListener('click', openGroupSheet);
   $('#messages').appendChild(el);
   requestAnimationFrame(() => { $('#messages').scrollTop = 1e9; });
 }
 function setChips(list) {
   const c = $('#chips'); c.innerHTML = '';
-  for (const t of list) { const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.onclick = () => handleUser(t); c.appendChild(b); }
+  for (const t of list) { const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.onclick = () => t.startsWith('👥') ? openGroupSheet() : handleUser(t); c.appendChild(b); }
 }
-const AFTER_PLAN = ['Другой вариант', 'Дешевле', 'Больше необычного', 'Добавь бары', 'Аниме и игры', 'Храмы и сады', 'Красивые виды', 'Без алкоголя', 'Добавь день'];
+const AFTER_PLAN = ['👥 Группа и бюджет', 'Другой вариант', 'Дешевле', 'Больше необычного', 'Добавь бары', 'Аниме и игры', 'Храмы и сады', 'Красивые виды', 'Без алкоголя', 'Добавь день'];
 const interestsText = list => list.map(i => INTERESTS[i]?.label).filter(Boolean).join(', ');
 
 async function handleUser(text) {
@@ -221,7 +244,9 @@ async function handleUser(text) {
   if (p.cuisine) tr.cuisine = [...new Set([...(tr.cuisine || []), ...p.cuisine])];
   if (p.style) tr.style = p.style;
   if (p.noAlcohol) tr.noAlcohol = true;
-  if (p.interests) tr.interests = /только/.test(t) || !tr.interests ? p.interests : [...new Set([...tr.interests, ...p.interests])];
+  if (p.people) tr.people = p.people;
+  if (p.budgetMode) tr.budgetMode = p.budgetMode;
+  if (p.placesMode) tr.placesMode = p.placesMode;  if (p.interests) tr.interests = /только/.test(t) || !tr.interests ? p.interests : [...new Set([...tr.interests, ...p.interests])];
   if (p.useGeo && !tr.city) await tryGeoCity();
   save();
   await nextStep(p);
@@ -242,8 +267,27 @@ async function nextStep(p = {}) {
     addMsg('bot', 'Вижу по геолокации, что ты в Токио 👌');
   }
   if (!tr.days) { S.expecting = 'days'; addMsg('bot', 'На сколько дней?'); setChips(['1 день', '2 дня', '3 дня', '4 дня', '5 дней', 'Неделя']); save(); return; }
-  if (!tr.budget) { S.expecting = 'budget'; addMsg('bot', 'Какой бюджет? Можно на день или на всю поездку — в долларах, рублях или йенах.'); setChips(['$80 в день', '$150 в день', '15 000 ¥ в день', '$1000 на всю поездку', '100 000 ₽ всего']); save(); return; }
-  if (!tr.lodging) { S.expecting = 'lodging'; addMsg('bot', 'Жильё уже есть или подобрать?'); setChips(['Жилья нет — подбери', 'Жильё уже есть']); save(); return; }
+  if (!tr.people) { S.expecting = 'people'; addMsg('bot', 'Сколько вас едет?'); setChips(['Я один', 'Вдвоём', 'Втроём', '4 человека', '6 человек', 'Группа 10 человек', 'Группа 20 человек']); save(); return; }
+  const N = tr.people;
+  if (N > 1 && !tr.budgetMode) {
+    S.expecting = 'budgetMode';
+    addMsg('bot', `Вас ${N}. Как считаем деньги?\n• <b>у каждого свой</b> — каждый тратит своё, суммы можно задать разные\n• <b>только мой</b> — считаю твои траты, жильё делим на всех\n• <b>общий</b> — одна сумма на всю компанию`);
+    setChips(['У каждого свой бюджет', 'Только мой', 'Общий бюджет на всех']); save(); return;
+  }
+  if (!tr.budget) {
+    S.expecting = 'budget';
+    const who = N > 1 ? { each: ' на одного человека', mine: ' твой', shared: ' на всю группу' }[tr.budgetMode] : '';
+    addMsg('bot', `Какой бюджет${who}? Можно на день или на всю поездку — в долларах, рублях или йенах.`);
+    setChips(N > 1 && tr.budgetMode === 'shared' ? [`$${100 * N * 3} всего`, `$${150 * N} в день`, `${(10000 * N).toLocaleString('ru-RU')} ¥ в день`, `${(80000 * N).toLocaleString('ru-RU')} ₽ всего`]
+      : ['$80 в день', '$150 в день', '15 000 ¥ в день', '$1000 на всю поездку', '100 000 ₽ всего']);
+    save(); return;
+  }
+  if (!tr.lodging) { S.expecting = 'lodging'; addMsg('bot', N > 1 ? 'Жильё уже есть или подобрать? Подберу общее — так дешевле, чем каждому отдельно.' : 'Жильё уже есть или подобрать?'); setChips(['Жилья нет — подбери', 'Жильё уже есть']); save(); return; }
+  if (N > 1 && !tr.placesMode) {
+    S.expecting = 'placesMode';
+    addMsg('bot', 'Ходите везде вместе или каждый по своим интересам?\n• <b>вместе</b> — один маршрут и одни места на всех\n• <b>каждый своё</b> — у каждого свой план, места не повторяются, жильё общее');
+    setChips(['Все вместе, одни места', 'Каждый своё — разные места']); save(); return;
+  }
   S.expecting = null;
   const notes = [];
   const b = tr.budget;
@@ -253,7 +297,7 @@ async function nextStep(p = {}) {
   }
   if (!b.per) {
     // подозрительно большой "дневной" бюджет при многодневной поездке — скорее всего это на всю поездку
-    const usd = convert(b.amount, b.currency, 'USD');
+    const usd = convert(b.amount / (N > 1 && tr.budgetMode === 'shared' ? N : 1), b.currency, 'USD');
     if (tr.days > 1 && usd > 600) { b.per = 'total'; notes.push(`Считаю, что ${fmt(b.amount, b.currency)} — на всю поездку. Если это на день — напиши «это на день».`); }
     else { b.per = 'day'; if (tr.days > 1) notes.push('Считаю бюджет на день. Если это на всю поездку — напиши «это всего».'); }
   }
@@ -264,27 +308,65 @@ async function makePlan(prefix = '') {
   const tr = S.trip;
   const city = await loadCity(tr.city);
   const cur = CITY_PRICES[tr.city].currency;
-  const perDay = tr.budget.per === 'total' ? tr.budget.amount / tr.days : tr.budget.amount;
-  const local = convert(perDay, tr.budget.currency, cur) * (tr.budgetFactor || 1);
-  S.plan = buildPlan(city, { ...tr, budgetLocal: local }, S.seed);
-  S.plan.userCur = tr.budget.currency;
+  const uc = tr.budget.currency;
+  const { N, mode, separate } = groupOf(tr);
+  const toLocal = a => convert(tr.budget.per === 'total' ? a / tr.days : a, uc, cur) * (tr.budgetFactor || 1);
+  // дневной бюджет на каждого человека
+  const ppB = tr.members.map(m => mode === 'shared' ? toLocal(tr.budget.amount) / N : mode === 'each' ? toLocal(m.budget || tr.budget.amount) : toLocal(tr.budget.amount));
+  const minB = Math.min(...ppB);
+  const notes = prefix ? [prefix] : [];
+  let plans;
+  if (!separate) {
+    plans = [buildPlan(city, { ...tr, people: N, budgetLocal: minB }, S.seed)];
+    if (mode === 'each' && Math.max(...ppB) > minB * 1.05) {
+      const poor = tr.members[ppB.indexOf(minB)].name;
+      notes.push(`Вы ходите вместе, поэтому план под самый скромный бюджет — ${poor}: ${fmt(minB, cur)} в день. У остальных останется запас.`);
+    }
+    if (mode === 'mine' && N > 1) notes.push(`Считаю только твои траты. Жильё общее — его цена делится на ${N}.`);
+  } else {
+    // у каждого свой план; места не повторяются (общий exclude), жильё одно на всех — по самому скромному бюджету
+    const exclude = new Set();
+    plans = [];
+    tr.members.forEach((m, i) => {
+      const pl = buildPlan(city, { ...tr, interests: m.interests?.length ? m.interests : tr.interests, people: N, separate: true, budgetLocal: ppB[i], stayBudget: minB, exclude, stayFrom: plans[0] || null }, S.seed + i * 7919);
+      pl.who = m.name; plans.push(pl);
+    });
+    if (!tr.members.some(m => m.interests?.length)) notes.push('Маршруты у всех разные, но интересы пока общие. Задать каждому свои — в «👥 Группа и бюджет».');
+  }
+  plans.forEach(p => { p.userCur = uc; p.group = { N, mode, separate }; });
+  S.plans = plans; S.who = 0; S.plan = plans[0];
   S.day = 0;
-  const pl = S.plan, uc = tr.budget.currency;
+  const pl = S.plan;
   const u = v => uc !== cur ? ` <span class="muted">· ${fmt(convert(v, cur, uc), uc)}</span>` : '';
   const totalTxt = tr.budget.per === 'total' ? `всего ${fmt(tr.budget.amount, uc)} → ` : '';
+  const avgAll = plans.reduce((a, p) => a + p.avgDay, 0) / plans.length, budAll = plans.reduce((a, p) => a + p.budgetDay, 0) / plans.length;
+  const ppl = N > 1 ? ' на человека' : '';
   const rows = [];
-  if (pl.stay) rows.push(['Жильё', `${esc(pl.stay.label)}, ≈ ${fmt(pl.stay.price, cur)}/ночь`]);
+  if (N > 1) rows.push(['Группа', `${pplTxt(N)} · ${BMODE_RU[mode]} · ${separate ? 'каждый своё' : 'все вместе'}`]);
+  if (pl.stay) rows.push(['Жильё', stayLine(pl.stay, cur, N)]);
   rows.push(['Еда', `завтрак — ${pl.tiers.breakfast}, обед — ${pl.tiers.lunch}, ужин — ${pl.tiers.dinner}${pl.meals.bar ? ', вечером бар' : ''}`]);
-  rows.push(['Районы', pl.days.map(d => esc(d.district)).filter((x, i, a) => a.indexOf(x) === i).join(' · ')]);
-  rows.push(['Интересы', esc(interestsText(pl.interests)) + (tr.interests ? '' : ' <span class="muted">(по умолчанию)</span>')]);
-  let html = `<div class="pc-top">${ring(pl.avgDay / pl.budgetDay, 74, Math.round(pl.avgDay / pl.budgetDay * 100) + '%', 'бюджета')}
-    <div><h3>${SUPPORTED[tr.city].name} · ${daysTxt(tr.days)}</h3><div class="sub">${totalTxt}${fmt(local, cur)}${u(local)} в день</div>
-    <div class="sub">план ≈ <b style="color:var(--text)">${fmt(pl.avgDay, cur)}</b>${u(pl.avgDay)} в день</div></div></div>
+  if (separate) {
+    const shown = plans.slice(0, 6);
+    shown.forEach(p => rows.push([esc(p.who), `${esc(interestsText(p.interests))} <span class="muted">· ≈ ${fmt(p.avgDay, cur)}/день</span>`]));
+    if (plans.length > shown.length) rows.push(['', `<span class="muted">и ещё ${plans.length - shown.length} — во вкладке «План»</span>`]);
+  } else {
+    rows.push(['Районы', pl.days.map(d => esc(d.district)).filter((x, i, a) => a.indexOf(x) === i).join(' · ')]);
+    rows.push(['Интересы', esc(interestsText(pl.interests)) + (tr.interests ? '' : ' <span class="muted">(по умолчанию)</span>')]);
+  }
+  const groupTotal = N > 1 && mode !== 'mine' ? `<div class="sub">на всех за поездку ≈ <b style="color:var(--text)">${fmt(plans.reduce((a, p) => a + p.avgDay, 0) * (separate ? 1 : N) * tr.days, cur)}</b>${u(plans.reduce((a, p) => a + p.avgDay, 0) * (separate ? 1 : N) * tr.days)}</div>` : '';
+  const budTxt = N === 1 ? `${totalTxt}${fmt(budAll, cur)}${u(budAll)} в день`
+    : mode === 'shared' ? `общий ${fmt(tr.budget.amount, uc)}${tr.budget.per === 'total' ? ' на поездку' : ' в день'} → ${fmt(budAll, cur)}${u(budAll)} в день на человека`
+    : mode === 'mine' ? `твой бюджет ${fmt(budAll, cur)}${u(budAll)} в день`
+    : `${separate ? 'в среднем ' : ''}${fmt(budAll, cur)}${u(budAll)} в день на человека`;
+  let html = `<div class="pc-top">${ring(avgAll / budAll, 74, Math.round(avgAll / budAll * 100) + '%', 'бюджета')}
+    <div><h3>${SUPPORTED[tr.city].name} · ${daysTxt(tr.days)}${N > 1 ? ' · 👥 ' + N : ''}</h3><div class="sub">${budTxt}</div>
+    <div class="sub">план ≈ <b style="color:var(--text)">${fmt(avgAll, cur)}</b>${u(avgAll)} в день${ppl}</div>${groupTotal}</div></div>
     <div class="kv">${rows.map(r => `<span>${r[0]}</span><span>${r[1]}</span>`).join('')}</div>`;
-  if (prefix) html += `<div class="note">${esc(prefix)}</div>`;
+  if (notes.length) html += `<div class="note">${esc(notes.join('\n'))}</div>`;
   if (pl.warnings.length) html += `<div class="note warn">⚠️ ${pl.warnings.map(esc).join('\n⚠️ ')}</div>`;
-  if (!tr.interests) html += `<div class="note">Скажи, что любишь — «аниме и бани», «только кофе и виды» — и я пересоберу.</div>`;
+  if (!tr.interests && !separate) html += `<div class="note">Скажи, что любишь — «аниме и бани», «только кофе и виды» — и я пересоберу.</div>`;
   html += `<button class="cta">Открыть план по дням →</button>`;
+  if (N > 1) html += `<button class="grp-cta">👥 ${separate || mode === 'each' ? 'Настроить каждого' : 'Группа и бюджет'}</button>`;
   addMsg('bot', html, { card: true });
   setChips(AFTER_PLAN);
   save();
@@ -295,13 +377,13 @@ async function makePlan(prefix = '') {
 const SLOT_TIME = { breakfast: '09:00', morning: '10:30', lunch: '13:00', afternoon: '14:30', afternoon2: '16:30', dinner: '19:00', evening: '21:00' };
 let dayMap = null;
 
-function bookingLinks(cityEn, days) {
+function bookingLinks(cityEn, days, N = 1, rooms = 1) {
   const ymd = d => d.toISOString().slice(0, 10);
   const ci = new Date(), co = new Date(Date.now() + Math.max(1, days - 1) * 864e5);
   return [
-    ['Booking', `https://www.booking.com/searchresults.html?ss=${cityEn}&checkin=${ymd(ci)}&checkout=${ymd(co)}&group_adults=1&no_rooms=1&order=price`],
+    ['Booking', `https://www.booking.com/searchresults.html?ss=${cityEn}&checkin=${ymd(ci)}&checkout=${ymd(co)}&group_adults=${N}&no_rooms=${rooms}&order=price`],
     ['Hostelworld', `https://www.hostelworld.com/st/hostels/asia/japan/${cityEn.toLowerCase()}/`],
-    ['Airbnb', `https://www.airbnb.com/s/${cityEn}/homes?checkin=${ymd(ci)}&checkout=${ymd(co)}&adults=1`],
+    ['Airbnb', `https://www.airbnb.com/s/${cityEn}/homes?checkin=${ymd(ci)}&checkout=${ymd(co)}&adults=${Math.min(N, 16)}`],
   ];
 }
 
@@ -311,22 +393,30 @@ function renderPlan() {
   const tr = S.trip, cur = pl.currency, uc = pl.userCur;
   const u = v => uc !== cur ? ` · ${fmt(convert(v, cur, uc), uc)}` : '';
   const left = pl.budgetDay - pl.avgDay;
-  let h = `<div class="hero"><div class="eyebrow">Твоя поездка</div><h2>${SUPPORTED[pl.city].name}, ${daysTxt(tr.days)}</h2>
-    <div class="row">${ring(pl.avgDay / pl.budgetDay, 96, fmt(pl.avgDay, cur), 'в день')}
-      <div class="nums"><span>Бюджет <b>${fmt(pl.budgetDay, cur)}</b>${u(pl.budgetDay)}</span>
+  const G = pl.group || { N: 1, mode: 'mine', separate: false };
+  const N = G.N, pp = N > 1 ? ' на человека' : '';
+  // переключатель участников, если у каждого свой план
+  let h = S.plans.length > 1 ? `<div class="people-bar chips">${S.plans.map((p, i) => `<button class="daypill ${i === S.who ? 'on' : ''}" data-who="${i}"><b>${esc(p.who)}</b><span>≈ ${fmt(p.avgDay, cur)}/день</span></button>`).join('')}</div>` : '';
+  const eyebrow = N === 1 ? 'Твоя поездка' : G.separate ? `План: ${esc(pl.who)} · из ${N}` : `Поездка на ${pplTxt(N)}`;
+  const groupSum = N > 1 && G.mode !== 'mine' ? (G.separate ? S.plans.reduce((a, p) => a + p.avgDay, 0) : pl.avgDay * N) * tr.days : 0;
+  h += `<div class="hero"><div class="eyebrow">${eyebrow}</div><h2>${SUPPORTED[pl.city].name}, ${daysTxt(tr.days)}</h2>
+    <div class="row">${ring(pl.avgDay / pl.budgetDay, 96, fmt(pl.avgDay, cur), 'в день' + (N > 1 ? '/чел' : ''))}
+      <div class="nums"><span>Бюджет${pp} <b>${fmt(pl.budgetDay, cur)}</b>${u(pl.budgetDay)}</span>
       <span>${left >= 0 ? `Запас <b class="ok">${fmt(left, cur)}</b>${u(left)}` : `Перебор <b class="bad">${fmt(-left, cur)}</b>`}</span>
-      <span>За поездку ≈ <b>${fmt(pl.avgDay * tr.days, cur)}</b>${u(pl.avgDay * tr.days)}</span></div></div>
+      <span>За поездку${pp} ≈ <b>${fmt(pl.avgDay * tr.days, cur)}</b>${u(pl.avgDay * tr.days)}</span>
+      ${groupSum ? `<span>На всех ≈ <b>${fmt(groupSum, cur)}</b>${u(groupSum)}</span>` : ''}</div></div>
     <div class="tags">${pl.interests.map(i => `<span class="tag">${esc(INTERESTS[i]?.label || i)}</span>`).join('')}</div>
+    <button class="grp-btn" id="grpBtn">👥 ${N > 1 ? `${pplTxt(N)} · ${BMODE_RU[G.mode]} · ${G.separate ? 'каждый своё' : 'все вместе'}` : 'Еду один — добавить людей'}<span>изменить</span></button>
     ${pl.warnings.map(w => `<div class="alert">⚠️ ${esc(w)}</div>`).join('')}</div>`;
 
   if (pl.stay) {
-    h += `<div class="sec-title"><h3>Жильё</h3><span>${esc(pl.stay.label)} · ≈ ${fmt(pl.stay.price, cur)}${u(pl.stay.price)}/ночь</span></div><div class="hscroll">`;
+    h += `<div class="sec-title"><h3>Жильё${N > 1 ? ' на всех' : ''}</h3><span>${stayLine(pl.stay, cur, N)}</span></div><div class="hscroll">`;
     pl.stayOptions.forEach((p, i) => {
       h += `<button class="stay" data-stay="${i}"><div class="top-row"><div class="tile" style="${tileBg(p)}">${emo(p)}</div><span class="badge niche" style="${p.s >= 1.5 ? '' : 'display:none'}">нишевое</span></div>
         <div class="nm">${esc(p.n)}</div><div class="meta">${esc(KIND_RU[p.k])} · ${esc(cityDistrictName(p))}</div>
         <div class="book-links"><a class="mini" href="https://www.booking.com/searchresults.html?ss=${encodeURIComponent((p.o || p.n) + ' Tokyo')}" target="_blank" onclick="event.stopPropagation()">Цены на Booking</a></div></button>`;
     });
-    h += `</div><div class="book-links">${bookingLinks(SUPPORTED[pl.city].en, tr.days).map(([n, l]) => `<a class="mini" href="${l}" target="_blank">${n} ↗</a>`).join('')}</div>`;
+    h += `</div><div class="book-links">${bookingLinks(SUPPORTED[pl.city].en, tr.days, N, pl.stay.cap > 1 ? pl.stay.units : 1).map(([n, l]) => `<a class="mini" href="${l}" target="_blank">${n} ↗</a>`).join('')}</div>`;
   }
 
   h += `<div class="daybar"><div class="chips">${pl.days.map((d, i) => `<button class="daypill ${i === S.day ? 'on' : ''}" data-day="${i}"><b>День ${i + 1}</b><span>${esc(d.district.split(' и ')[0])}</span></button>`).join('')}</div></div>`;
@@ -351,8 +441,9 @@ function renderPlan() {
   h += `</div><div class="day-sum">
     <div class="line"><span>Места и еда</span><span>${fmt(d.total - d.transport - d.stayCost, cur)}</span></div>
     <div class="line"><span>Транспорт (метро)</span><span>${fmt(d.transport, cur)}</span></div>
-    ${d.stayCost ? `<div class="line"><span>Жильё</span><span>${fmt(d.stayCost, cur)}</span></div>` : ''}
-    <div class="line total"><span>Итого за день</span><span class="${over ? 'bad' : ''}">${fmt(d.total, cur)}${u(d.total)}</span></div>
+    ${d.stayCost ? `<div class="line"><span>Жильё${N > 1 ? ' (доля)' : ''}</span><span>${fmt(d.stayCost, cur)}</span></div>` : ''}
+    <div class="line total"><span>Итого за день${pp}</span><span class="${over ? 'bad' : ''}">${fmt(d.total, cur)}${u(d.total)}</span></div>
+    ${N > 1 && !G.separate && G.mode !== 'mine' ? `<div class="line"><span>На всю компанию</span><span>${fmt(d.total * N, cur)}${u(d.total * N)}</span></div>` : ''}
     <div class="bar ${over ? 'over' : ''}"><i style="width:${Math.min(100, d.total / pl.budgetDay * 100)}%"></i></div></div>
     <div class="foot-note">Цены — средние оценки (≈). Места — OpenStreetMap, перед походом проверь часы работы.</div>`;
   const y = box.scrollTop;
@@ -360,14 +451,16 @@ function renderPlan() {
   box.scrollTop = y;
 
   box.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { S.day = +b.dataset.day; save(); renderPlan(); });
-  box.querySelectorAll('[data-stay]').forEach(b => b.onclick = () => placeSheet(pl.stayOptions[+b.dataset.stay], { cost: pl.stay.price, cur }));
+  box.querySelectorAll('[data-who]').forEach(b => b.onclick = () => { S.who = +b.dataset.who; S.plan = S.plans[S.who]; save(); renderPlan(); });
+  $('#grpBtn').onclick = openGroupSheet;
+  box.querySelectorAll('[data-stay]').forEach(b => b.onclick = () => placeSheet(pl.stayOptions[+b.dataset.stay], { cost: pl.stay.pp ?? pl.stay.price, cur }));
   box.querySelectorAll('[data-item]').forEach(b => b.onclick = () => {
     const ii = +b.dataset.item, it = d.items[ii];
     if (!it.p) return;
     const onSwap = async (mode, btn) => {
       const city = await loadCity(pl.city);
       S.seed++;
-      if (!swapItem(city, pl, S.day, ii, mode, S.seed)) { btn.textContent = 'нет вариантов'; return; }
+      if (!swapItem(city, pl, S.day, ii, mode, S.seed, G.separate ? otherIds() : [])) { btn.textContent = 'нет вариантов'; return; }
       save(); renderPlan();
       const ni = S.plan.days[S.day].items[ii];
       placeSheet(ni.p, { cost: ni.cost, cur, onSwap });
@@ -542,6 +635,89 @@ function getPos() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   });
 }
+
+// ---------------- лист «Группа и бюджет» ----------------
+// Всё то же, что спрашивает чат, но руками: люди, дни, режим бюджета, вместе/раздельно, бюджет и интересы каждого.
+function openGroupSheet() {
+  const tr = S.trip;
+  const D = {
+    people: tr.people || 1, days: tr.days || 3, budgetMode: tr.budgetMode || 'each', placesMode: tr.placesMode || 'together',
+    amount: tr.budget?.amount || '', currency: tr.budget?.currency || 'USD', per: tr.budget?.per || 'day', lodging: tr.lodging || 'need',
+    interests: [...(tr.interests || [])], members: JSON.parse(JSON.stringify(tr.members || [])), open: -1,
+  };
+  const syncMembers = () => groupOf(D); // та же нормализация списка, что и в плане
+  const seg = (key, opts) => `<div class="seg seg${opts.length}" data-seg="${key}">${opts.map(([v, t, s]) => `<button class="${D[key] === v ? 'on' : ''}" data-v="${v}">${t}${s ? `<small>${s}</small>` : ''}</button>`).join('')}</div>`;
+  const ichips = (list, attr) => `<div class="ichips">${Object.entries(INTERESTS).map(([id, x]) => `<button class="chip ${list.includes(id) ? 'on' : ''}" ${attr} data-int="${id}">${esc(x.label)}</button>`).join('')}</div>`;
+
+  const draw = () => {
+    syncMembers();
+    const N = D.people, sep = N > 1 && D.placesMode === 'separate', each = N > 1 && D.budgetMode === 'each';
+    const amtLabel = N === 1 ? 'Бюджет' : { each: 'Бюджет на человека', mine: 'Твой бюджет', shared: 'Общий бюджет на всю группу' }[D.budgetMode];
+    let h = `<h3 class="sh-title">👥 Группа и бюджет</h3>
+      <div class="fld"><span>Сколько вас</span><div class="stepper"><button data-st="people" data-d="-1">−</button><b>${N}</b><button data-st="people" data-d="1">+</button></div></div>
+      <div class="fld"><span>Дней</span><div class="stepper"><button data-st="days" data-d="-1">−</button><b>${D.days}</b><button data-st="days" data-d="1">+</button></div></div>`;
+    if (N > 1) h += `<div class="lbl">Как считаем деньги</div>${seg('budgetMode', [['each', 'Каждому свой', 'суммы разные'], ['mine', 'Только мой', 'жильё делим'], ['shared', 'Общий', 'одна сумма']])}`;
+    h += `<div class="lbl">${amtLabel}${each ? ' <span class="muted">— по умолчанию, ниже можно поменять каждому</span>' : ''}</div>
+      <div class="money"><input id="gAmt" type="number" inputmode="decimal" placeholder="150" value="${esc(D.amount)}">
+        <select id="gCur">${['USD', 'JPY', 'RUB', 'EUR'].map(c => `<option ${D.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      ${seg('per', [['day', 'в день'], ['total', 'на всю поездку']])}`;
+    if (N > 1) h += `<div class="lbl">Маршрут</div>${seg('placesMode', [['together', 'Все вместе', 'одни места'], ['separate', 'Каждый своё', 'места не повторяются']])}`;
+    h += `<div class="lbl">Жильё</div>${seg('lodging', [['need', 'Подобрать', N > 1 ? 'общее на всех' : ''], ['have', 'Уже есть']])}`;
+    if (!sep) h += `<div class="lbl">${N > 1 ? 'Интересы для всех' : 'Интересы'} <span class="muted">— пусто = по умолчанию</span></div>${ichips(D.interests, 'data-common')}`;
+    if (each || sep) {
+      h += `<div class="lbl">Участники</div><div class="members">`;
+      D.members.forEach((m, i) => {
+        const its = m.interests?.length ? m.interests : null;
+        h += `<div class="mem"><div class="mem-row"><span class="mem-n">${i + 1}</span><input class="mem-name" data-mi="${i}" value="${esc(m.name)}" maxlength="16">
+          ${each ? `<input class="mem-bud" data-mi="${i}" type="number" inputmode="decimal" placeholder="${esc(D.amount || '—')}" value="${esc(m.budget || '')}"><span class="mem-cur">${D.currency}</span>` : ''}</div>
+          ${sep ? `<button class="mem-int" data-open="${i}">${its ? esc(interestsText(its)) : '<span class="muted">интересы: как у всех</span>'} <span class="muted">${D.open === i ? '▴' : '▾'}</span></button>
+            ${D.open === i ? ichips(m.interests || [], `data-mem="${i}"`) : ''}` : ''}</div>`;
+      });
+      h += `</div>`;
+      if (sep) h += `<div class="lbl">Общие интересы <span class="muted">— для тех, кому не выбрали</span></div>${ichips(D.interests, 'data-common')}`;
+    }
+    h += `<div id="gErr" class="g-err"></div><button class="cta" id="gGo">Собрать план</button>`;
+    const sh = $('#sheet'), y = sh.scrollTop;
+    $('#sheetBody').innerHTML = h;
+    sh.scrollTop = y;
+    bind($('#sheetBody'));
+  };
+
+  const bind = el => {
+    el.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+      const k = b.dataset.st, lim = k === 'people' ? 30 : 21;
+      D[k] = Math.max(1, Math.min(lim, D[k] + +b.dataset.d)); draw();
+    });
+    el.querySelectorAll('[data-seg] button').forEach(b => b.onclick = () => { D[b.parentNode.dataset.seg] = b.dataset.v; draw(); });
+    el.querySelector('#gAmt').oninput = e => { D.amount = e.target.value; el.querySelectorAll('.mem-bud').forEach(x => x.placeholder = D.amount || '—'); };
+    el.querySelector('#gCur').onchange = e => { D.currency = e.target.value; el.querySelectorAll('.mem-cur').forEach(x => x.textContent = D.currency); };
+    el.querySelectorAll('.mem-name').forEach(x => x.oninput = () => { D.members[+x.dataset.mi].name = x.value.trim() || `Друг ${+x.dataset.mi}`; });
+    el.querySelectorAll('.mem-bud').forEach(x => x.oninput = () => { D.members[+x.dataset.mi].budget = parseFloat(x.value) || null; });
+    el.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === +b.dataset.open ? -1 : +b.dataset.open; draw(); });
+    el.querySelectorAll('[data-int]').forEach(b => b.onclick = () => {
+      const id = b.dataset.int;
+      const list = b.hasAttribute('data-common') ? D.interests : (D.members[+b.dataset.mem].interests ||= []);
+      const k = list.indexOf(id); if (k >= 0) list.splice(k, 1); else list.push(id);
+      b.classList.toggle('on', k < 0);
+      if (b.dataset.mem != null) { const m = D.members[+b.dataset.mem]; b.closest('.mem').querySelector('.mem-int').innerHTML = `${m.interests.length ? esc(interestsText(m.interests)) : '<span class="muted">интересы: как у всех</span>'} <span class="muted">▴</span>`; }
+    });
+    el.querySelector('#gGo').onclick = async () => {
+      const amount = parseFloat(D.amount);
+      if (!(amount > 0)) { el.querySelector('#gErr').textContent = 'Впиши сумму бюджета'; el.querySelector('#gAmt').focus(); return; }
+      tr.city ||= 'tokyo';
+      Object.assign(tr, { people: D.people, days: D.days, budgetMode: D.people > 1 ? D.budgetMode : null, placesMode: D.people > 1 ? D.placesMode : null, lodging: D.lodging, members: D.members });
+      if (D.interests.length) tr.interests = D.interests; else delete tr.interests;
+      tr.budget = { amount, currency: D.currency, per: D.per };
+      tr.budgetFactor = 1;
+      S.expecting = null;
+      closeSheet();
+      await makePlan(D.people > 1 ? `Собрал план на ${pplTxt(D.people)}.` : '');
+    };
+  };
+  openSheet('', () => {});
+  draw();
+}
+$('#grpTop').onclick = openGroupSheet;
 
 // ---------------- ввод ----------------
 const input = $('#input');

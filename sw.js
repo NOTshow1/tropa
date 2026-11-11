@@ -1,5 +1,5 @@
 // Офлайн-кэш: оболочка приложения + база города. Меняй VERSION при каждом обновлении.
-const VERSION = 'tropa-v3';
+const VERSION = 'tropa-v4';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/parser.js', 'js/planner.js', 'js/prices.js',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'data/tokyo.json', 'data/tokyo_michelin.json'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL))); self.skipWaiting(); });

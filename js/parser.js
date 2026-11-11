@@ -80,7 +80,8 @@ function findBudget(t) {
   }
   if (!m) {
     m = t.match(re('(бюджет|лимит|budget|могу тратить|денег)\\D{0,15}(\\d[\\d\\s]*)\\s*(к|k|тыс)?'));
-    if (!m) return null;
+    // "бюджет на 3 человек" / "бюджет на 5 дней" — это не сумма
+    if (!m || re('^\\s*(чел|человек|дн|день|дня|дней|ноч|недел)').test(t.slice(m.index + m[0].length))) return null;
     amount = parseNumber(m[2]); if (m[3]) mult = 1000; currency = null;
   }
   amount *= mult;
@@ -108,6 +109,8 @@ function findLodging(t) {
 }
 
 function findInterests(t) {
+  // "я еду в Токио" — глагол, а не еда
+  t = t.replace(/(я|мы|ты|сам|сама|скоро|завтра|тоже)\s+еду(?![a-zа-я])|еду\s+(в|во|на|с|со|один|одна|сам|сама|туда|отдыхать|к|вдвоем|втроем)\s/g, ' ');
   const found = [];
   for (const [id, { words }] of Object.entries(INTERESTS)) if (words.some(w => t.includes(w))) found.push(id);
   return found;
@@ -124,6 +127,38 @@ const CUISINES = [['рамен', 'рамен'], ['суши', 'суши'], ['як
   ['окономияки', 'окономияки'], ['карри', 'карри'], ['темпур', 'темпура'], ['угор', 'угорь'], ['гедза', 'гёдза'], ['гёдза', 'гёдза'],
   ['якинику', 'якинику'], ['гюдон', 'гюдон'], ['морепродукт', 'морепродукты'], ['пицц', 'пицца'], ['ramen', 'рамен'], ['sushi', 'суши']];
 
+// ---------- группа ----------
+const COLL = { 'двое': 2, 'трое': 3, 'четверо': 4, 'пятеро': 5, 'шестеро': 6, 'семеро': 7, 'восьмеро': 8,
+  'вдвоем': 2, 'втроем': 3, 'вчетвером': 4, 'впятером': 5, 'вшестером': 6, 'всемером': 7, 'ввосьмером': 8, 'вдевятером': 9, 'вдесятером': 10,
+  'двоих': 2, 'троих': 3, 'четверых': 4, 'пятерых': 5, 'шестерых': 6, 'семерых': 7, 'восьмерых': 8 };
+const COLLW = Object.keys(COLL).join('|');
+const PPL = '(чел\\L*|людей|люди|друз\\L*|туристов|участник\\L*|people|persons?|guys|friends)';
+function findPeople(t) {
+  let m = t.match(re('(?:^|\\s)(' + COLLW + ')(?=[\\s,.!?]|$)'));
+  if (m) return COLL[m[1]];
+  m = t.match(re('(\\d{1,2})\\s*' + PPL)) ||
+      t.match(re('(?:нас|группа|группой|группе|компани\\L*|команд\\L*)\\s+(?:из\\s+|в\\s+)?(\\d{1,2})(?![\\d\\s]*(дн|день|дня|дней|ноч|\\$|¥|€|₽|долл|йен|руб|тыс|к\\s))'));
+  if (m && +m[1] > 0) return Math.min(+m[1], 30);
+  m = t.match(re('(?:нас|группа из|компания из)\\s+(' + NUMW + ')(?=[\\s,.!?]|$)'));
+  if (m) return NUM_WORDS[m[1]];
+  if (/(я|еду|поеду|буду|лечу)\s+(один|одна|сам|сама)(?![a-zа-я])(?!\s*(день|дн))|соло|в одиночку|solo/.test(t)) return 1;
+  const REL = '(девушк|парн|жен|муж|подруг|друг(ом|ой)?(?=[\\s,.!?])|сестр|брат|мам|пап|партн|коллег|сын|доч)';
+  if (re('(^|\\s)(с|со)\\s+' + REL + '\\L*\\s+и\\s+' + REL).test(t)) return 3;
+  if (re('(^|\\s)(с|со)\\s+' + REL).test(t) && !/(с|со)\s+(друзьями|семьей|компанией|детьми|родителями)/.test(t)) return 2;
+  return null;
+}
+function findBudgetMode(t) {
+  if (/общ(ий|им|ая|ей|его) (бюджет|котел|касс)|(бюджет|денег) на (всех|группу|компанию)|на (двоих|троих|четверых|пятерых|шестерых|семерых|восьмерых)|на \d+ (чел|человек)|на всех вместе|в общий/.test(t)) return 'shared';
+  if (/только (мой|свой|за себя|на меня|мне)|(считай|посчитай|план) (только )?(для |на )?меня|мой бюджет|за себя/.test(t)) return 'mine';
+  if (/у каждого (свой|сво[ия])|каждому (свой|сво)|на (человека|каждого|одного)|с (человека|носа)|per person|each/.test(t) || re('по\\s+\\d[\\d\\s]*\\s*\\S*\\s+(каждый|на каждого|с каждого)').test(t)) return 'each';
+  return null;
+}
+function findPlacesMode(t) {
+  if (/кажд(ый|ому)\s+([a-zа-я]+\s+)?(сво[её]|сам|куда|по сво|отдельн)|разные места|разн(ые|ых) интерес|по отдельности|раздельно|разделимся|кто куда|separately/.test(t)) return 'separate';
+  if (/все вместе|(всё|все) время вместе|одни и те же|одинаков[a-zа-я]* (мест|маршрут|интерес)|одно направлени|общий маршрут|together/.test(t)) return 'together';
+  return null;
+}
+
 /** Главная функция: текст -> частичные параметры */
 export function parseMessage(text) {
   const t = ' ' + lower(text) + ' ';
@@ -135,6 +170,9 @@ export function parseMessage(text) {
   const interests = findInterests(t); if (interests.length) res.interests = interests;
   const cu = [...new Set(CUISINES.filter(([w]) => t.includes(w)).map(x => x[1]))]; if (cu.length) res.cuisine = cu;
   const style = findStyle(t); if (style) res.style = style;
+  const people = findPeople(t); if (people) res.people = people;
+  const bm = findBudgetMode(t); if (bm) res.budgetMode = bm;
+  const pm = findPlacesMode(t); if (pm) res.placesMode = pm;
   if (/(без|не надо|не нужн[a-zа-я]*)\s+(бар|алко|пить)|не пью/.test(t)) { res.noAlcohol = true; if (res.interests) { res.interests = res.interests.filter(i => i !== 'bars'); if (!res.interests.length) delete res.interests; } }
   if (/(я|мы)\s+(здесь|тут)|по геолокац|где я/.test(t) && !city) res.useGeo = true;
   return res;
@@ -145,6 +183,20 @@ export function parseShortAnswer(text, expecting) {
   const t = lower(text.trim());
   if (expecting === 'days') { const n = parseInt(t); if (n > 0) return { days: Math.min(n, 21) }; if (NUM_WORDS[t]) return { days: NUM_WORDS[t] }; }
   if (expecting === 'budget') { const n = parseNumber(t.replace(/[^\d.,\s]/g, '').trim() || 'x'); if (n > 0) return { budget: { amount: n, currency: null, per: null } }; }
+  if (expecting === 'people') {
+    const n = parseInt(t); if (n > 0) return { people: Math.min(n, 30) };
+    const p = findPeople(' ' + t + ' '); if (p) return { people: p };
+    if (/^(я )?(один|одна|сам|сама|соло)/.test(t)) return { people: 1 };
+  }
+  if (expecting === 'budgetMode') {
+    if (/каждо/.test(t)) return { budgetMode: 'each' };
+    if (/мой|меня|себя/.test(t)) return { budgetMode: 'mine' };
+    if (/общ|всех/.test(t)) return { budgetMode: 'shared' };
+  }
+  if (expecting === 'placesMode') {
+    if (/вместе|одни|одинак|общ/.test(t)) return { placesMode: 'together' };
+    if (/каждый|разн|отдельн|кто куда/.test(t)) return { placesMode: 'separate' };
+  }
   if (expecting === 'lodging') {
     if (/^(нет|не|неа|no|нету|надо|нужно|ищу|подбери)/.test(t)) return { lodging: 'need' };
     if (/^(да|есть|yes|ага|уже)/.test(t)) return { lodging: 'have' };

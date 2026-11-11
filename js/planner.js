@@ -68,12 +68,20 @@ function rankDistricts(city, ctx) {
 }
 
 // ---------- бюджет ----------
-function stayKind(prices, budgetDay, style) {
+// сколько человек помещается в один номер/кровать — в компании жильё делится
+const STAY_CAP = { hostel: 1, capsule: 1, guest_house: 2, apartment: 4, hotel: 2, hotel_mid: 2 };
+export function stayCostFor(kind, price, people = 1) {
+  const cap = STAY_CAP[kind] || 1, units = Math.ceil(people / cap);
+  return { units, cap, pp: price * units / people };
+}
+function stayKind(prices, budgetDay, style, people = 1) {
   const share = style === 'cheap' ? 0.33 : style === 'comfort' ? 0.5 : 0.42;
-  const kinds = Object.entries(prices.stay).sort((a, b) => a[1].price - b[1].price);
-  let pick = kinds[0];
-  for (const k of kinds) if (k[1].price <= budgetDay * share) pick = k;
-  return { kind: pick[0], ...pick[1] };
+  // от простого к лучшему; берём самое хорошее, что влезает по цене на человека
+  const kinds = Object.entries(prices.stay).sort((a, b) => a[1].price - b[1].price)
+    .map(([k, v]) => ({ kind: k, ...v, ...stayCostFor(k, v.price, people) }));
+  let pick = kinds.reduce((a, b) => b.pp < a.pp ? b : a);
+  for (const k of kinds) if (k.pp <= budgetDay * share && k.price >= pick.price) pick = k;
+  return pick;
 }
 
 const TIERS = ['cheap', 'mid', 'nice'];
@@ -146,14 +154,17 @@ export function buildPlan(city, trip, seed = 1) {
   const rand = rng(seed);
   const interests = trip.interests?.length ? trip.interests : DEFAULT_INTERESTS;
   const ctx = { interests, kinds: kindsFor(interests), weird: interests.includes('weird'), noAlcohol: trip.noAlcohol, cuisine: trip.cuisine };
-  const B = trip.budgetLocal; // в день, местная валюта
+  const B = trip.budgetLocal; // в день на человека, местная валюта
+  const N = trip.people || 1;
+  ctx.people = N;
+  const crowd = trip.separate ? 1 : N; // раздельно — по барам ходят не всей толпой
   const warnings = [];
 
-  // 1. жильё
+  // 1. жильё (в компании — общее, цена делится на всех)
   let stay = null, stayCost = 0;
   if (trip.lodging === 'need') {
-    stay = stayKind(prices, B, trip.style);
-    stayCost = stay.price;
+    stay = trip.stayFrom ? trip.stayFrom.stay : stayKind(prices, trip.stayBudget ?? B, trip.style, N);
+    stayCost = stay.pp ?? stay.price;
   }
   const transport = prices.transportDay;
   let money = B - stayCost - transport;
@@ -177,9 +188,10 @@ export function buildPlan(city, trip, seed = 1) {
   }
 
   // 4. конкретное жильё — в районе, ближайшем к "центру масс" всех дней
-  const exclude = new Set();
+  const exclude = trip.exclude || new Set(); // общий набор — чтобы у разных людей не повторялись места
   let stayOptions = [];
-  if (stay) {
+  if (trip.stayFrom) stayOptions = trip.stayFrom.stayOptions;
+  else if (stay) {
     const cx = dayDistricts.reduce((a, i) => a + city.districts[i].c[0], 0) / dayDistricts.length;
     const cy = dayDistricts.reduce((a, i) => a + city.districts[i].c[1], 0) / dayDistricts.length;
     const order = Object.keys(prices.stay);
@@ -226,7 +238,9 @@ export function buildPlan(city, trip, seed = 1) {
 
     // вечер
     if (meals.bar) {
-      const bar = pick(city, ctx, { d, groups: ['bar'], kinds: ['bar', 'jazz_bar', 'standing_bar', 'brewery'], exclude, near: last, rand })
+      // большой компанией в крошечный джаз-бар или тачиноми не влезть
+      const barKinds = crowd >= 5 ? ['bar', 'pub', 'brewery'] : ['bar', 'jazz_bar', 'standing_bar', 'brewery'];
+      const bar = pick(city, ctx, { d, groups: ['bar'], kinds: barKinds, exclude, near: last, rand })
         || pick(city, ctx, { d, groups: ['bar'], exclude, near: last, rand, maxDist: 2500 });
       add('evening', bar, prices.bar);
     } else {
@@ -239,16 +253,18 @@ export function buildPlan(city, trip, seed = 1) {
   });
 
   const avg = days.reduce((a, x) => a + x.total, 0) / days.length;
-  if (stay && stay.price > B * 0.6) warnings.push('Даже самое дешёвое жильё съедает больше половины бюджета.');
+  if (stay && stayCost > B * 0.6) warnings.push('Даже самое дешёвое жильё съедает больше половины бюджета.');
+  if (crowd >= 10) warnings.push(`Вас ${N}: в идзакаи и бары на 10–20 мест такой толпой не попасть — столы бронируйте заранее, а ужинать удобнее разбившись на компании по 4–6 человек.`);
+  else if (crowd >= 5) warnings.push('Компания большая — на ужин лучше бронировать стол заранее, маленькие места часто на 8–10 человек всего.');
   return {
-    city: city.id, currency: prices.currency, budgetDay: B, stay, stayOptions, days, meals, warnings,
+    city: city.id, currency: prices.currency, budgetDay: B, people: N, stay, stayOptions, days, meals, warnings,
     avgDay: avg, interests, seed, cuisine: trip.cuisine,
     tiers: { breakfast: TIER_RU[meals.breakfast], lunch: TIER_RU[meals.lunch], dinner: TIER_RU[meals.dinner] },
   };
 }
 
 // замена одного пункта плана: mode = 'other' | 'cheaper' | 'pricier'
-export function swapItem(city, plan, di, ii, mode, seed) {
+export function swapItem(city, plan, di, ii, mode, seed, otherIds = []) {
   const prices = CITY_PRICES[city.id];
   const rand = rng(seed);
   const day = plan.days[di]; const it = day.items[ii];
@@ -257,6 +273,7 @@ export function swapItem(city, plan, di, ii, mode, seed) {
   const ctx = { interests, kinds: kindsFor(interests), weird: interests.includes('weird'), cuisine: mode === 'other' ? plan.cuisine : null };
   const exclude = new Set(plan.days.flatMap(d => d.items.map(x => x.p?.i)).filter(Boolean));
   (it.tried ||= []).forEach(i => exclude.add(i));
+  otherIds.forEach(i => exclude.add(i)); // места других участников
   const near = it.p ? [it.p.la, it.p.lo] : null;
   let np = null, cost = it.cost;
   const meal = ['breakfast', 'lunch', 'dinner'].includes(it.slot);
