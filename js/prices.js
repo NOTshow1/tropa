@@ -12,13 +12,20 @@ export const CITY_PRICES = {
       apartment:   { price: 11000, label: 'апартаменты' },
       hotel:       { price: 13000, label: 'бизнес-отель' },
       hotel_mid:   { price: 22000, label: 'хороший отель' },
+      hotel_lux:   { price: 110000, label: 'люкс-отель 5★' },
     },
     meal: {
-      breakfast: { cheap: 600,  mid: 1100, nice: 1800 },   // конбини / кафе / брантч
-      lunch:     { cheap: 1000, mid: 1600, nice: 3000 },   // тэйсёку, рамен / ланч-сет / ресторан
-      dinner:    { cheap: 1300, mid: 3500, nice: 7000 },   // рамен, гюдон / идзакая / ресторан
+      // lux / top — уровень Мишлен (точная цена берётся у конкретного ресторана, здесь — оценка для раскладки бюджета)
+      breakfast: { cheap: 600,  mid: 1100, nice: 1800, lux: 6000 },                 // конбини / кафе / брантч / завтрак в люкс-отеле
+      lunch:     { cheap: 1000, mid: 1600, nice: 3000, lux: 12000, top: 12000 },    // … / ланч в звёздном ресторане
+      dinner:    { cheap: 1300, mid: 3500, nice: 7000, lux: 30000, top: 65000 },    // … / 1★ / 2–3★
     },
     bar: 2500,           // вечер в баре (2–3 напитка + закуска)
+    barPremium: 9000,    // бар из мировых рейтингов / бар люкс-отеля, 3–4 коктейля
+    club: { solo: 12000, table: 35000, vip: 70000 }, // клуб: вход и напитки / доля стола в компании / VIP-стол с шампанским
+    premiumAvg: 30000,   // средняя цена премиум-развлечения — для раскладки бюджета
+    taxiDay: 12000,      // такси весь день вместо метро
+    driverDay: 75000,    // машина с водителем (Alphard и т.п.) на 8–10 часов
     coffee: 600,
     ticket: { museum: 1200, gallery: 0, cinema: 2000, theatre: 4000, viewpoint: 0, attraction: 800,
               park: 0, garden: 300, temple: 0, sento: 550, shop: 0, artwork: 0, historic: 0, nightclub: 3000 },

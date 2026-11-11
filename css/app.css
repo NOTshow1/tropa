@@ -296,3 +296,5 @@ body.sheet-open .tabbar, body.panel-open .tabbar { opacity: 0; pointer-events: n
 .mem-cur { font-size: 12px; color: var(--muted); width: 30px; }
 .mem-int { display: block; width: 100%; text-align: left; font-size: 13.5px; padding: 8px 4px 2px 34px; }
 .g-err { color: var(--bad); font-size: 14px; min-height: 8px; margin-top: 10px; }
+
+.tip { background: rgba(224,164,0,.1); border: 1px solid rgba(224,164,0,.3); color: #fde68a; border-radius: 16px; padding: 12px 14px; font-size: 14px; margin-top: 14px; }

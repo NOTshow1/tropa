@@ -7,7 +7,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const SUPPORTED = { tokyo: { name: 'Токио', en: 'Tokyo', center: [35.6895, 139.73] } };
 
 // ---------------- категории: эмодзи и цвет ----------------
-const GROUP_COLOR = { food: '#ff8a3d', cafe: '#f5b941', bar: '#b77cff', night: '#f472b6', culture: '#5b9dff', sight: '#2fcf8f', shop: '#22c7e0', stay: '#8b6cff' };
+const GROUP_COLOR = { food: '#ff8a3d', cafe: '#f5b941', bar: '#b77cff', night: '#f472b6', culture: '#5b9dff', sight: '#2fcf8f', shop: '#22c7e0', stay: '#8b6cff', premium: '#e0a400' };
 const KIND_EMOJI = {
   restaurant: '🍜', fast_food: '🍙', food_court: '🍱', izakaya: '🏮', cafe: '☕', kissaten: '☕', bakery: '🥐', confectionery: '🍡', ice_cream: '🍦',
   bar: '🍸', pub: '🍶', jazz_bar: '🎷', standing_bar: '🍶', brewery: '🍺', nightclub: '🪩', sento: '♨️', museum: '🏛️', gallery: '🎨', arts_centre: '🎨',
@@ -17,7 +17,7 @@ const KIND_EMOJI = {
 };
 const CUISINE_EMOJI = [['рамен', '🍜'], ['суши', '🍣'], ['якитори', '🍢'], ['удон', '🍜'], ['соба', '🍜'], ['карри', '🍛'], ['тонкацу', '🍖'], ['якинику', '🥩'],
   ['пицца', '🍕'], ['бургеры', '🍔'], ['окономияки', '🥞'], ['гёдза', '🥟'], ['темпура', '🍤'], ['морепродукты', '🦐'], ['итальянская', '🍝'], ['китайская', '🥡'], ['корейская', '🥘'], ['индийская', '🍛']];
-const emo = p => { if (p.g === 'food' && p.cu) for (const [c, e] of CUISINE_EMOJI) if (p.cu.includes(c)) return e; return KIND_EMOJI[p.k] || '📍'; };
+const emo = p => { if (p.e) return p.e; if (p.g === 'food' && p.cu) for (const [c, e] of CUISINE_EMOJI) if (p.cu.includes(c)) return e; return KIND_EMOJI[p.k] || '📍'; };
 const color = p => GROUP_COLOR[p.g] || '#888';
 const tileBg = p => `background:${color(p)}26;color:${color(p)}`;
 
@@ -32,7 +32,11 @@ S.plan = S.plans[S.who] || null;
 const save = () => localStorage.setItem('state', JSON.stringify({ ...S, plan: undefined }));
 const cityCache = {};
 async function loadCity(id) {
-  if (!cityCache[id]) cityCache[id] = await (await fetch(`data/${id}.json`)).json();
+  if (!cityCache[id]) {
+    const [c, m] = await Promise.all([fetch(`data/${id}.json`).then(r => r.json()), fetch(`data/${id}_michelin.json`).then(r => r.json()).catch(() => ({ places: [] }))]);
+    c.michelin = m.places; // планировщик берёт отсюда звёздные рестораны для больших бюджетов
+    cityCache[id] = c;
+  }
   return cityCache[id];
 }
 const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 10 || h >= 20) ? b : c; };
@@ -145,6 +149,7 @@ function placeSheet(p, { cost, cur = 'JPY', onSwap, distance } = {}) {
       <div><h3>${esc(p.n)}${badge}</h3>${p.o ? `<div class="orig">${esc(p.o)}</div>` : ''}</div></div>
     <div class="facts">
       ${p.mi ? `<div><span>⭐</span><span>${MI_TXT[p.mi]}</span></div>` : ''}
+      ${p.ex ? `<div><span>💎</span><span>${esc(p.ex)}</span></div>` : ''}
       <div><span>🏷️</span><span>${esc(p.mi ? 'ресторан' : (KIND_RU[p.k] || p.k))}${p.cu ? ' · ' + esc(p.cu) : ''}</span></div>
       ${priceTxt ? `<div><span>💴</span><span>${priceTxt}</span></div>` : ''}
       ${p.h ? `<div><span>🕒</span><span>${esc(p.h)}</span></div>` : ''}
@@ -156,7 +161,8 @@ function placeSheet(p, { cost, cur = 'JPY', onSwap, distance } = {}) {
     <div class="actions">
       <a class="act primary" href="${appleMaps(p)}" target="_blank"><span class="ic">🧭</span>Маршрут</a>
       <a class="act" href="${gPhotos(p)}" target="_blank"><span class="ic">🗺️</span>Google</a>
-      ${p.mu ? `<a class="act" href="${esc(p.mu)}" target="_blank"><span class="ic">⭐</span>Гид Michelin</a>`
+      ${p.g === 'premium' ? `<a class="act" href="${esc(p.w)}" target="_blank"><span class="ic">🔎</span>Где забронировать</a>`
+      : p.mu ? `<a class="act" href="${esc(p.mu)}" target="_blank"><span class="ic">⭐</span>Гид Michelin</a>`
              : `<a class="act ${p.w ? '' : 'off'}" href="${esc(p.w || '#')}" target="_blank"><span class="ic">🌐</span>Сайт</a>`}
     </div>
     ${onSwap ? `<div class="swap-h">Заменить в плане</div><div class="seg"><button data-m="other">↻ Другое</button><button data-m="cheaper">↓ Дешевле</button><button data-m="pricier">↑ Дороже</button></div>` : ''}`;
@@ -344,7 +350,9 @@ async function makePlan(prefix = '') {
   const rows = [];
   if (N > 1) rows.push(['Группа', `${pplTxt(N)} · ${BMODE_RU[mode]} · ${separate ? 'каждый своё' : 'все вместе'}`]);
   if (pl.stay) rows.push(['Жильё', stayLine(pl.stay, cur, N)]);
-  rows.push(['Еда', `завтрак — ${pl.tiers.breakfast}, обед — ${pl.tiers.lunch}, ужин — ${pl.tiers.dinner}${pl.meals.bar ? ', вечером бар' : ''}`]);
+  rows.push(['Еда', `завтрак — ${pl.tiers.breakfast}, обед — ${pl.tiers.lunch}, ужин — ${pl.tiers.dinner}${pl.meals.bar === 'premium' ? ', коктейль-бары мирового уровня' : pl.meals.bar ? ', вечером бар' : ''}`]);
+  const lux = [pl.meals.exp ? `премиум-развлечения: ${pl.meals.exp} в день` : '', pl.meals.club === 'vip' ? 'VIP-стол в клубе' : pl.meals.club ? 'клуб' : '', pl.meals.taxi === 'driver' ? 'машина с водителем' : pl.meals.taxi ? 'такси' : ''].filter(Boolean);
+  if (lux.length) rows.push(['Люкс', lux.join(' · ')]);
   if (separate) {
     const shown = plans.slice(0, 6);
     shown.forEach(p => rows.push([esc(p.who), `${esc(interestsText(p.interests))} <span class="muted">· ≈ ${fmt(p.avgDay, cur)}/день</span>`]));
@@ -363,6 +371,7 @@ async function makePlan(prefix = '') {
     <div class="sub">план ≈ <b style="color:var(--text)">${fmt(avgAll, cur)}</b>${u(avgAll)} в день${ppl}</div>${groupTotal}</div></div>
     <div class="kv">${rows.map(r => `<span>${r[0]}</span><span>${r[1]}</span>`).join('')}</div>`;
   if (notes.length) html += `<div class="note">${esc(notes.join('\n'))}</div>`;
+  if (pl.tips?.length) html += `<div class="note">💡 ${pl.tips.map(esc).join('\n💡 ')}</div>`;
   if (pl.warnings.length) html += `<div class="note warn">⚠️ ${pl.warnings.map(esc).join('\n⚠️ ')}</div>`;
   if (!tr.interests && !separate) html += `<div class="note">Скажи, что любишь — «аниме и бани», «только кофе и виды» — и я пересоберу.</div>`;
   html += `<button class="cta">Открыть план по дням →</button>`;
@@ -374,7 +383,7 @@ async function makePlan(prefix = '') {
 }
 
 // ---------------- план ----------------
-const SLOT_TIME = { breakfast: '09:00', morning: '10:30', lunch: '13:00', afternoon: '14:30', afternoon2: '16:30', dinner: '19:00', evening: '21:00' };
+const SLOT_TIME = { breakfast: '09:00', morning: '10:30', lunch: '13:00', afternoon: '14:30', afternoon2: '16:30', dinner: '19:00', evening: '21:00', night: '23:00' };
 let dayMap = null;
 
 function bookingLinks(cityEn, days, N = 1, rooms = 1) {
@@ -407,6 +416,7 @@ function renderPlan() {
       ${groupSum ? `<span>На всех ≈ <b>${fmt(groupSum, cur)}</b>${u(groupSum)}</span>` : ''}</div></div>
     <div class="tags">${pl.interests.map(i => `<span class="tag">${esc(INTERESTS[i]?.label || i)}</span>`).join('')}</div>
     <button class="grp-btn" id="grpBtn">👥 ${N > 1 ? `${pplTxt(N)} · ${BMODE_RU[G.mode]} · ${G.separate ? 'каждый своё' : 'все вместе'}` : 'Еду один — добавить людей'}<span>изменить</span></button>
+    ${(pl.tips || []).map(w => `<div class="tip">💡 ${esc(w)}</div>`).join('')}
     ${pl.warnings.map(w => `<div class="alert">⚠️ ${esc(w)}</div>`).join('')}</div>`;
 
   if (pl.stay) {
@@ -432,7 +442,7 @@ function renderPlan() {
       <button class="tl-card" data-item="${ii}">
         ${p ? `<div class="tile" style="${tileBg(p)}">${emo(p)}<span class="n">${n}</span></div>` : `<div class="tile" style="background:var(--s3)">🏪</div>`}
         <div class="tl-main"><div class="tl-slot">${SLOT_RU[it.slot]}</div>
-          <div class="tl-name">${p ? esc(p.n) : 'Конбини по пути'}${p?.f ? '<span class="badge famous">классика</span>' : p && p.s >= 1.5 ? '<span class="badge niche">нишевое</span>' : ''}</div>
+          <div class="tl-name">${p ? esc(p.n) : 'Конбини по пути'}${p?.mi && p.mi !== 'bib' ? `<span class="badge gold">${'★'.repeat(p.mi)} Michelin</span>` : p?.g === 'premium' ? '<span class="badge gold">премиум</span>' : p?.f ? '<span class="badge famous">классика</span>' : p && p.s >= 1.5 ? '<span class="badge niche">нишевое</span>' : ''}</div>
           <div class="tl-sub">${p ? esc(KIND_RU[p.k] || p.k) + (p.cu ? ' · ' + esc(p.cu) : '') : 'онигири, кофе, сэндвич'}${it.note && p ? ' · ' + esc(it.note) : ''}</div></div>
         <div class="price ${it.cost ? '' : 'free'}">${it.cost ? pr : 'free'}</div>
       </button></div>`;
@@ -440,7 +450,7 @@ function renderPlan() {
   const over = d.total > pl.budgetDay;
   h += `</div><div class="day-sum">
     <div class="line"><span>Места и еда</span><span>${fmt(d.total - d.transport - d.stayCost, cur)}</span></div>
-    <div class="line"><span>Транспорт (метро)</span><span>${fmt(d.transport, cur)}</span></div>
+    <div class="line"><span>${d.transport >= 50000 ? 'Машина с водителем' : d.taxi ? 'Такси весь день' : 'Транспорт (метро)'}</span><span>${fmt(d.transport, cur)}</span></div>
     ${d.stayCost ? `<div class="line"><span>Жильё${N > 1 ? ' (доля)' : ''}</span><span>${fmt(d.stayCost, cur)}</span></div>` : ''}
     <div class="line total"><span>Итого за день${pp}</span><span class="${over ? 'bad' : ''}">${fmt(d.total, cur)}${u(d.total)}</span></div>
     ${N > 1 && !G.separate && G.mode !== 'mine' ? `<div class="line"><span>На всю компанию</span><span>${fmt(d.total * N, cur)}${u(d.total * N)}</span></div>` : ''}
